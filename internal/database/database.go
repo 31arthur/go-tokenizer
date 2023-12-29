@@ -2,39 +2,48 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
+	"server/internal/models"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-type Service interface {
+type DBService interface {
 	Health() map[string]string
+	InsertNewUser(*models.UserAuth) error
+	UpdateUser(*models.UserAuth) error
 }
 
 type service struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
 var (
 	database = os.Getenv("DB_DATABASE")
 	password = os.Getenv("DB_PASSWORD")
 	username = os.Getenv("DB_USERNAME")
-	port     = os.Getenv("DB_PORT")
 	host     = os.Getenv("DB_HOST")
+	port     = os.Getenv("DB_PORT")
 )
 
-func New() Service {
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", username, password, host, port, database)
-	db, err := sql.Open("pgx", connStr)
+func NewCon() DBService {
+
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable", host, username, password, database, port)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+
 	if err != nil {
 		log.Fatal(err)
+		return nil
 	}
 	s := &service{db: db}
+	s.NewUserAuth()
+
 	return s
 }
 
@@ -42,9 +51,12 @@ func (s *service) Health() map[string]string {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	err := s.db.PingContext(ctx)
+	var result int
+	err := s.db.WithContext(ctx).Raw("SELECT 1").Row().Scan(&result)
 	if err != nil {
-		log.Fatalf(fmt.Sprintf("db down: %v", err))
+		return map[string]string{
+			"message": fmt.Sprintf("Database is down: %v", err),
+		}
 	}
 
 	return map[string]string{
