@@ -2,6 +2,9 @@ package server
 
 import (
 	"net/http"
+	"server/internal/middleware"
+	"server/internal/tokenizer"
+	"server/internal/utility"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -17,8 +20,10 @@ func (s *Server) RegisterRoutes() http.Handler {
 	r.GET("/auth/:provider", s.getAuthComplete)
 	r.GET("/logout/:provider", s.getLoggedOut)
 
-	r.GET("/hello-world", s.helloWorld)
+	r.GET("/hello-world", middleware.AuthCheck(s.db), s.helloWorld)
 	r.POST("/get-user-deets", s.getUserDeets)
+
+	r.GET("/token-check", s.tokenHandler)
 
 	return r
 }
@@ -32,4 +37,17 @@ func (s *Server) HelloWorldHandler(c *gin.Context) {
 
 func (s *Server) healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, s.db.Health())
+}
+
+func (s *Server) tokenHandler(c *gin.Context) {
+	token, err := tokenizer.AccessTokenGenerator("hello")
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid to create token",
+		})
+		return
+	}
+
+	utility.SetAuthorizationCookie("Auth_Sample", token, c)
 }

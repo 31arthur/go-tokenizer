@@ -1,66 +1,80 @@
 package database
 
 import (
+	"fmt"
 	"log"
 	"server/internal/models"
-	"time"
 )
 
 func (s *service) NewUserAuth() {
+	s.tableCreator(&models.UserAuth{}, "User Auth")
+	s.tableCreator(&models.UserDetails{}, "User Details")
+}
+
+func (s *service) tableCreator(tableModel any, tableName string) {
 	migrator := s.db.Migrator()
 
-	if !migrator.HasTable(&models.UserAuth{}) {
-		err := s.db.AutoMigrate(&models.UserAuth{})
+	if !migrator.HasTable(tableModel) {
+		err := s.db.AutoMigrate(tableModel)
 		if err != nil {
 			panic("failed to migrate table")
 		}
-		println("Table UserAuth created successfully")
+		fmt.Println("Table " + tableName + " created successfully")
 	} else {
-		println("Table UserAuth already exists")
+		fmt.Println("Table " + tableName + " already exists")
 	}
 }
 
-func (s *service) InsertNewUser(user *models.UserAuth) error {
-	var existingUser models.UserAuth
+func (s *service) FreshCheck(uid string, email string) (bool, string, error) {
+	var tempUAuthData models.UserAuth
 
-	// Check if User ID or Email ID already exists in the table
-	result := s.db.Where("user_id = ? OR email = ?", user.UserID, user.Email).First(&existingUser)
-	if result.Error == nil {
-		// User exists; update the user
-		return s.UpdateUser(user)
+	result := s.db.Where("user_id = ? OR email = ?", uid, email).First(&tempUAuthData)
+	// fmt.Println("Result value", result, result.Error)
+	if result.Error != nil {
+		return false, "", result.Error
 	}
+	return true, tempUAuthData.ID, nil
+}
 
-	// User does not exist; proceed with insertion
+func (s *service) InsertNewUser(user interface{}) error {
+
 	if err := s.db.Create(user).Error; err != nil {
-		log.Println("Error inserting new user:", err)
+		log.Println("Error inserting new User Auth:", err)
 		return err
 	}
 	return nil
 }
 
-func (s *service) UpdateUser(user *models.UserAuth) error {
-	// Fetch the existing user record
-	var existingUser models.UserAuth
-	if err := s.db.Where("user_id = ? OR email = ?", user.UserID, user.Email).First(&existingUser).Error; err != nil {
-		log.Println(err)
-		return err
+func (s *service) SearchUserAuthByID(uid string) (models.UserAuth, error) {
+
+	user, err := s.GetRowByID(uid)
+	if err != nil {
+		return models.UserAuth{}, err
 	}
 
-	updateFields := make(map[string]interface{})
-	updateFields["provider"] = user.Provider
-	updateFields["access_token"] = user.AccessToken
-	updateFields["refresh_token"] = user.RefreshToken
-	updateFields["token_expiry"] = user.TokenExpiry
-	updateFields["auth_time"] = time.Now()
+	return user, nil
+}
 
-	// Update name if it's not blank
-	if user.NameString != "" {
-		updateFields["name_string"] = user.NameString
+func (s *service) ReplaceUserAuthByID(newUserAuth *models.UserAuth) error {
+	var existingUserAuth models.UserAuth
+
+	// Find the existing UserAuth record by ID
+	result := s.db.Where("id = ?", newUserAuth.ID).First(&existingUserAuth)
+	if result.Error != nil {
+		return result.Error // Return error if record not found or any error occurs
 	}
 
-	if err := s.db.Model(&existingUser).Updates(updateFields).Error; err != nil {
-		log.Println(err)
-		return err
+	// Update all fields with the new values
+	existingUserAuth.LatestAuthTime = newUserAuth.LatestAuthTime
+	existingUserAuth.RefreshToken = newUserAuth.RefreshToken
+	existingUserAuth.AccessToken = newUserAuth.AccessToken
+	existingUserAuth.RefreshTokenExpiry = newUserAuth.RefreshTokenExpiry
+	// Update other fields as needed
+
+	// Save the changes to the database
+	if err := s.db.Save(&existingUserAuth).Error; err != nil {
+		return err // Return error if update fails
 	}
+
 	return nil
 }

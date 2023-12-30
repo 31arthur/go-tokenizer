@@ -16,8 +16,13 @@ import (
 
 type DBService interface {
 	Health() map[string]string
-	InsertNewUser(*models.UserAuth) error
-	UpdateUser(*models.UserAuth) error
+	InsertNewUser(interface{}) error
+	ReplaceUserAuthByID(*models.UserAuth) error
+	FreshCheck(string, string) (bool, string, error)
+	GetAccessTokenByID(string) (string, error)
+	SearchUserAuthByID(string) (models.UserAuth, error)
+	GetRefreshTokenDetailsByID(string) (string, time.Time, error)
+	PutNewAccessTokenByID(string, string) error
 }
 
 type service struct {
@@ -62,4 +67,14 @@ func (s *service) Health() map[string]string {
 	return map[string]string{
 		"message": "It's healthy",
 	}
+}
+
+func (s *service) GetRowByID(uid string) (models.UserAuth, error) {
+	var existingUserAuth models.UserAuth
+
+	if result := s.db.First(&existingUserAuth, "id=?", uid); result.Error != nil {
+		return models.UserAuth{}, result.Error
+	}
+
+	return existingUserAuth, nil
 }

@@ -3,6 +3,8 @@ package helper
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Response struct {
@@ -25,4 +27,10 @@ func WriteJSONResponse(w http.ResponseWriter, r *http.Request, resp Response) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+func ErrorResponse(errStr string, c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": errStr,
+	})
 }

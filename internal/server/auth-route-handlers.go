@@ -8,7 +8,9 @@ import (
 	"server/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
+	"gorm.io/gorm"
 )
 
 func (s *Server) getAuthCallbackFunction(c *gin.Context) {
@@ -27,22 +29,14 @@ func (s *Server) getAuthCallbackFunction(c *gin.Context) {
 		helper.WriteJSONResponse(c.Writer, r, resp)
 		return
 	}
-	fmt.Println(user)
+	// fmt.Println(user)
+	uid := s.ExtendAuthCallback(user, c)
 
-	userAuth := models.MapUserToUserAuth(user)
-	if err = s.db.InsertNewUser(&userAuth); err != nil {
-		fmt.Fprintln(c.Writer, r)
-		resp := helper.Response{
-			Status: http.StatusInternalServerError,
-			Error:  err,
-		}
-		helper.WriteJSONResponse(c.Writer, r, resp)
-		return
-	}
+	// fmt.Println(uid)
 
 	resp := helper.Response{
 		Status:   http.StatusFound,
-		Redirect: "http://localhost:5173/landing?user=" + user.UserID,
+		Redirect: "http://localhost:5173/landing?user=" + uid,
 	}
 	helper.WriteJSONResponse(c.Writer, r, resp)
 }
@@ -64,4 +58,43 @@ func (s *Server) getLoggedOut(c *gin.Context) {
 	gothic.Logout(w, r)
 	w.Header().Set("Location", "/")
 	w.WriteHeader(http.StatusTemporaryRedirect)
+}
+
+//========================================================================
+
+func (s *Server) ExtendAuthCallback(user goth.User, c *gin.Context) string {
+	flag, id, err := s.db.FreshCheck(user.UserID, user.Email)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		// Handle the database error
+		helper.ErrorResponse("Error in fresh Check @ || "+err.Error(), c)
+		return ""
+	}
+
+	userAuthDetails, err := models.MapUserToUserAuth(user, id)
+	if err != nil {
+		helper.ErrorResponse("Error mapping User to User Auth @ "+err.Error(), c)
+		return ""
+	}
+
+	userDetails := models.MapUserToUserDetails(user, userAuthDetails.ID)
+
+	if !flag {
+		if err := s.db.InsertNewUser(&userAuthDetails); err != nil {
+			helper.ErrorResponse("Error inserting new User Auth Table @ "+err.Error(), c)
+			return ""
+		}
+
+		if err := s.db.InsertNewUser(&userDetails); err != nil {
+			helper.ErrorResponse("Error inserting new User Details Table @ "+err.Error(), c)
+			return ""
+		}
+		return userAuthDetails.ID
+	}
+
+	if err := s.db.ReplaceUserAuthByID(&userAuthDetails); err != nil {
+		helper.ErrorResponse("Error updating User Auth Table @ "+err.Error(), c)
+		return ""
+	}
+
+	return userAuthDetails.ID
 }

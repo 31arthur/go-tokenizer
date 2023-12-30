@@ -25,15 +25,11 @@ func (s *Server) getUserDeets(c *gin.Context) {
 		return
 	}
 
-	userID := user.ID
-	// utility.SetUserToken(c, userID)
-	utility.SetAuthorizationCookie("Authorization", userID, c)
-
-	/*w := utility.SetAuthorizationCookie("Authorization", "Random String of two", c.Writer)
-
-	resp := helper.Response{
-		Status: http.StatusOK,
-		Data:   map[string]interface{}{"data": "Received user ID: " + userID},
+	accessToken, err := s.db.GetAccessTokenByID(user.ID)
+	if err != nil {
+		helper.ErrorResponse(
+			"error in fetching access token @ "+err.Error(), c)
 	}
-	helper.WriteJSONResponse(w, c.Request, resp)*/
+
+	utility.SetAuthorizationCookie("pmt_auth_acct", accessToken, c)
 }
